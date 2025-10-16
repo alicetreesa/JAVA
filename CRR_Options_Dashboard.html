@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRR Options Analytics Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --primary-2: #0ea5e9;
+      --accent: #22c55e;
+      --danger: #ef4444;
+      --border: #e5e7eb;
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color: var(--text); background: var(--bg);
+    }
+    .header {
+      background: linear-gradient(90deg, #0f2027, #203a43, #2c5364);
+      color: #fff; padding: 18px 22px; border-bottom: 1px solid rgba(255,255,255,0.12);
+    }
+    .header h1 { margin: 0 0 4px 0; font-size: 20px; letter-spacing: 0.2px; }
+    .header p { margin: 0; opacity: 0.85; }
+
+    .layout {
+      display: grid; grid-template-columns: 360px 1fr; gap: 16px; padding: 16px; align-items: start;
+    }
+    .panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .panel h3 { margin: 2px 0 10px 0; font-size: 15px; }
+    .panel hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    input[type="number"], select, input[type="text"] {
+      width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: #fff; color: var(--text);
+    }
+    input[type="checkbox"] { transform: translateY(2px); }
+
+    .metric {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+    }
+    .metric .k { font-size: 12px; color: var(--muted); }
+    .metric .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
+
+    .tabs { display: flex; gap: 8px; }
+    .tab-btn {
+      background: #fff; border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13px;
+    }
+    .tab-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin: 10px 0 8px; }
+
+    .muted { color: var(--muted); font-size: 12px; }
+    .caption { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .error { color: var(--danger); font-size: 13px; }
+
+    .footer-note { margin-top: 10px; }
+
+    .leg-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 10px; }
+    .btn { display: inline-block; background: var(--primary); color: #fff; border: 0; border-radius: 10px; padding: 10px 12px; cursor: pointer; font-weight: 600; }
+    .btn.secondary { background: #fff; border: 1px solid var(--border); color: var(--text); }
+
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Interactive Binomial (CRR) Options Analytics Dashboard</h1>
+    <p>Pricing with dividend yield, European/American exercise, lattices, strategies, and payoff/profit.</p>
+  </div>
+
+  <div class="layout">
+    <div class="panel" id="controls">
+      <h3>Model Inputs</h3>
+      <div class="grid-2">
+        <div>
+          <label>Spot (S0)</label>
+          <input type="number" id="S0" value="100" min="0.01" step="1" />
+        </div>
+        <div>
+          <label>Volatility σ (% p.a.)</label>
+          <input type="number" id="sigma" value="20" min="0" step="0.5" />
+        </div>
+        <div>
+          <label>Maturity T (years)</label>
+          <input type="number" id="T" value="1" min="0.01" step="0.05" />
+        </div>
+        <div>
+          <label>Risk-free r (% p.a.)</label>
+          <input type="number" id="r" value="5" step="0.25" />
+        </div>
+        <div>
+          <label>Dividend yield q (% p.a.)</label>
+          <input type="number" id="q" value="0" min="0" step="0.25" />
+        </div>
+        <div>
+          <label>Steps n</label>
+          <input type="number" id="n" value="75" min="1" max="250" step="1" />
+        </div>
+      </div>
+      <div class="caption">p = (e^{(r−q)Δt} − d) / (u − d), u = e^{σ√Δt}, d = 1/u</div>
+      <hr/>
+
+      <h3>Single Option</h3>
+      <div class="grid-3">
+        <div>
+          <label>Strike K</label>
+          <input type="number" id="K" value="100" min="0.01" step="1" />
+        </div>
+        <div>
+          <label>Type</label>
+          <select id="optType">
+            <option value="call" selected>call</option>
+            <option value="put">put</option>
+          </select>
+        </div>
+        <div>
+          <label>Exercise</label>
+          <select id="exercise">
+            <option value="european" selected>european</option>
+            <option value="american">american</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:8px; align-items: center;">
+        <div>
+          <label>Premium override (optional)</label>
+          <input type="number" id="premiumOverride" value="0" min="0" step="0.01" />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div><input type="checkbox" id="useOverride" /> Use override for profit</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="single">Single Option</button>
+        <button class="tab-btn" data-tab="templates">Strategy Templates</button>
+        <button class="tab-btn" data-tab="custom">Custom Strategy</button>
+        <button class="tab-btn" data-tab="dist">Terminal Distribution</button>
+      </div>
+
+      <div id="tab-single" class="panel" style="margin-top:10px;">
+        <div class="cards">
+          <div class="metric"><div class="k">CRR Price</div><div class="v" id="metricPrice">–</div></div>
+          <div class="metric"><div class="k">Premium used (profit)</div><div class="v" id="metricPremium">–</div></div>
+          <div class="metric"><div class="k">Dividend yield</div><div class="v" id="metricQ">–</div></div>
+        </div>
+        <div id="latticeInfo" class="muted" style="margin:8px 0 6px"></div>
+        <div class="grid-2">
+          <div id="stockLattice"></div>
+          <div id="optionLattice"></div>
+        </div>
+        <div id="payoffProfit" style="margin-top:6px"></div>
+        <div class="caption" id="singleCaption"></div>
+      </div>
+
+      <div id="tab-templates" class="panel" style="margin-top:10px; display:none;">
+        <h3>Strategy Templates</h3>
+        <div class="grid-3">
+          <div>
+            <label>Template</label>
+            <select id="templateSelect">
+              <option>Long Call</option>
+              <option>Short Call</option>
+              <option>Long Put</option>
+              <option>Short Put</option>
+              <option>Bull Call Spread</option>
+              <option>Bear Call Spread</option>
+              <option>Bull Put Spread</option>
+              <option>Bear Put Spread</option>
+              <option>Long Straddle</option>
+              <option>Short Straddle</option>
+              <option>Long Strangle</option>
+              <option>Short Strangle</option>
+              <option>Long Call Butterfly</option>
+            </select>
+          </div>
+          <div>
+            <label>Quantity</label>
+            <input type="number" id="tplQty" value="1" min="1" step="1" />
+          </div>
+          <div></div>
+        </div>
+        <div class="grid-3" style="margin-top:8px;">
+          <div>
+            <label>K1</label>
+            <input type="number" id="tplK1" value="100" step="1" />
+          </div>
+          <div>
+            <label>K2</label>
+            <input type="number" id="tplK2" value="110" step="1" />
+          </div>
+          <div>
+            <label>K3</label>
+            <input type="number" id="tplK3" value="120" step="1" />
+          </div>
+        </div>
+        <div id="tplError" class="error" style="margin-top:6px;"></div>
+        <div class="cards" style="margin-top:8px;">
+          <div class="metric"><div class="k">Net premium (debit+/credit-)</div><div class="v" id="tplPrem">–</div></div>
+          <div class="metric"><div class="k">Max profit (grid)</div><div class="v" id="tplMaxP">–</div></div>
+          <div class="metric"><div class="k">Max loss (grid)</div><div class="v" id="tplMaxL">–</div></div>
+        </div>
+        <div id="tplCaption" class="caption"></div>
+        <div id="tplChart" style="margin-top:8px;"></div>
+      </div>
+
+      <div id="tab-custom" class="panel" style="margin-top:10px; display:none;">
+        <h3>Custom Strategy (Add Legs)</h3>
+        <div class="grid-3">
+          <div>
+            <label>Number of legs</label>
+            <input type="number" id="numLegs" value="2" min="1" max="10" step="1" />
+          </div>
+          <div></div>
+          <div style="display:flex; align-items:end; justify-content:flex-end;">
+            <button class="btn" id="btnEvalCustom">Evaluate Strategy</button>
+          </div>
+        </div>
+        <div id="legsContainer" style="margin-top:8px;"></div>
+        <div class="cards" style="margin-top:8px;">
+          <div class="metric"><div class="k">Net premium (debit+/credit-)</div><div class="v" id="custPrem">–</div></div>
+          <div class="metric"><div class="k">Max profit (grid)</div><div class="v" id="custMaxP">–</div></div>
+          <div class="metric"><div class="k">Max loss (grid)</div><div class="v" id="custMaxL">–</div></div>
+        </div>
+        <div id="custCaption" class="caption"></div>
+        <div id="custChart" style="margin-top:8px;"></div>
+      </div>
+
+      <div id="tab-dist" class="panel" style="margin-top:10px; display:none;">
+        <h3>Risk-Neutral Terminal Distribution</h3>
+        <div id="distChart"></div>
+        <div class="caption" id="distCaption"></div>
+      </div>
+
+      <div class="panel footer-note">
+        <div class="muted">
+          • Risk-neutral p uses dividend yield q; American exercise uses early-exercise check at each node.<br/>
+          • Strategy templates enforce constraints (spreads: K1&lt;K2, butterfly: K1&lt;K2&lt;K3).<br/>
+          • Use premium override for P/L with a market price.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---------- Utilities ----------
+    function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+    function fmt(x, digits=4) {
+      if (x === null || x === undefined || !isFinite(x)) return '–';
+      return Number(x).toLocaleString(undefined, {minimumFractionDigits: digits, maximumFractionDigits: digits});
+    }
+
+    // ---------- CRR Model ----------
+    function computeCRR(S0, K, r, q, sigma, T, n, optionType, exercise) {
+      if (n <= 0) throw new Error('n must be positive');
+      if (T <= 0) throw new Error('T must be positive');
+      const dt = T / n;
+      const u = Math.exp(sigma * Math.sqrt(dt));
+      const d = 1.0 / u;
+      const growth = Math.exp((r - q) * dt);
+      const denom = (u - d);
+      if (denom === 0) throw new Error('u equals d; invalid parameters');
+      let p = (growth - d) / denom; p = clamp(p, 0, 1);
+      const disc = Math.exp(-r * dt);
+
+      // Stock lattice
+      const stock = [];
+      for (let i = 0; i <= n; i++) {
+        const level = [];
+        for (let j = 0; j <= i; j++) level.push(S0 * Math.pow(u, j) * Math.pow(d, i - j));
+        stock.push(level);
+      }
+
+      // Option lattice
+      let last = stock[stock.length - 1];
+      let values = last.map(s => optionType === 'call' ? Math.max(0, s - K) : Math.max(0, K - s));
+      const opt = new Array(n + 1);
+      opt[n] = values;
+      for (let i = n - 1; i >= 0; i--) {
+        const level = [];
+        for (let j = 0; j <= i; j++) {
+          const cont = disc * (p * opt[i + 1][j + 1] + (1 - p) * opt[i + 1][j]);
+          if (exercise === 'american') {
+            const s = stock[i][j];
+            const intrinsic = optionType === 'call' ? Math.max(0, s - K) : Math.max(0, K - s);
+            level.push(Math.max(cont, intrinsic));
+          } else {
+            level.push(cont);
+          }
+        }
+        opt[i] = level;
+      }
+
+      return { u, d, p, dt, disc, stock, opt, price: opt[0][0] };
+    }
+
+    function terminalDistribution(S0, r, q, sigma, T, n) {
+      const dt = T / n;
+      const u = Math.exp(sigma * Math.sqrt(dt));
+      const d = 1.0 / u;
+      let p = (Math.exp((r - q) * dt) - d) / (u - d); p = clamp(p, 0, 1);
+      const ST = Array.from({length: n+1}, (_, j) => S0 * Math.pow(u, j) * Math.pow(d, n - j));
+      const probs = new Array(n+1).fill(0);
+      probs[0] = Math.pow(1 - p, n);
+      for (let j = 1; j <= n; j++) {
+        probs[j] = probs[j-1] * (p / (1 - p)) * (n - j + 1) / j;
+      }
+      const sum = probs.reduce((a,b) => a+b, 0);
+      if (sum > 0) for (let i = 0; i < probs.length; i++) probs[i] /= sum;
+      return { ST, probs };
+    }
+
+    // ---------- Strategy Engine ----------
+    function legPayoff(kind, side, strike, SArr) {
+      const base = SArr.map(S => kind === 'call' ? Math.max(0, S - strike) : Math.max(0, strike - S));
+      return side === 'long' ? base : base.map(x => -x);
+    }
+
+    function evaluateStrategy(legs, base, Sgrid) {
+      // Price per leg (CRR) unless premium_override provided
+      const legPrices = {};
+      let totalPrem = 0;
+      legs.forEach((leg, idx) => {
+        const res = computeCRR(base.S0, leg.strike, base.r, base.q, base.sigma, base.T, base.n, leg.kind, base.exercise);
+        const used = (leg.premium_override == null || isNaN(leg.premium_override)) ? res.price : Number(leg.premium_override);
+        legPrices[idx] = used;
+        totalPrem += leg.quantity * (leg.side === 'long' ? 1 : -1) * used;
+      });
+
+      const payoff = new Array(Sgrid.length).fill(0);
+      legs.forEach(leg => {
+        const arr = legPayoff(leg.kind, leg.side, leg.strike, Sgrid);
+        for (let i=0;i<payoff.length;i++) payoff[i] += leg.quantity * arr[i];
+      });
+      const profit = payoff.map(v => v - totalPrem);
+
+      const be = breakevensAndExtrema(Sgrid, profit);
+      return { payoff, profit, legPrices, totalPrem, be };
+    }
+
+    function breakevensAndExtrema(S, profit) {
+      const zeros = [];
+      for (let i=1;i<S.length;i++) {
+        const y0 = profit[i-1], y1 = profit[i];
+        if (y0 === 0) zeros.push(S[i-1]);
+        if (y1 === 0) zeros.push(S[i]);
+        if ((y0 < 0 && y1 > 0) || (y0 > 0 && y1 < 0)) {
+          const x0 = S[i-1], x1 = S[i];
+          const x = x0 + (0 - y0) * (x1 - x0) / (y1 - y0);
+          zeros.push(x);
+        }
+      }
+      const uniq = Array.from(new Set(zeros.map(x => Number(x.toFixed(6))))).sort((a,b)=>a-b);
+      const maxP = Math.max(...profit);
+      const minP = Math.min(...profit);
+      return { breakevens: uniq, max_profit: maxP, max_loss: minP };
+    }
+
+    function buildTemplate(template, K1, K2, K3, qty) {
+      if (qty <= 0) throw new Error('Quantity must be positive');
+      const L = (kind, side, quantity, strike, premium_override=null) => ({kind, side, quantity, strike, premium_override});
+
+      switch (template) {
+        case 'Long Call': return [L('call','long',qty,K1)];
+        case 'Short Call': return [L('call','short',qty,K1)];
+        case 'Long Put': return [L('put','long',qty,K1)];
+        case 'Short Put': return [L('put','short',qty,K1)];
+        case 'Bull Call Spread':
+          if (!(K1 < K2)) throw new Error('Bull Call: require K1 < K2');
+          return [L('call','long',qty,K1), L('call','short',qty,K2)];
+        case 'Bear Call Spread':
+          if (!(K1 < K2)) throw new Error('Bear Call: require K1 < K2');
+          return [L('call','short',qty,K1), L('call','long',qty,K2)];
+        case 'Bull Put Spread':
+          if (!(K1 < K2)) throw new Error('Bull Put: require K1 < K2');
+          return [L('put','short',qty,K2), L('put','long',qty,K1)];
+        case 'Bear Put Spread':
+          if (!(K1 < K2)) throw new Error('Bear Put: require K1 < K2');
+          return [L('put','long',qty,K2), L('put','short',qty,K1)];
+        case 'Long Straddle':
+          return [L('call','long',qty,K1), L('put','long',qty,K1)];
+        case 'Short Straddle':
+          return [L('call','short',qty,K1), L('put','short',qty,K1)];
+        case 'Long Strangle':
+          if (!(K1 < K2)) throw new Error('Strangle: require K1 < K2');
+          return [L('put','long',qty,K1), L('call','long',qty,K2)];
+        case 'Short Strangle':
+          if (!(K1 < K2)) throw new Error('Strangle: require K1 < K2');
+          return [L('put','short',qty,K1), L('call','short',qty,K2)];
+        case 'Long Call Butterfly':
+          if (!(K1 < K2 && K2 < K3)) throw new Error('Butterfly: require K1 < K2 < K3');
+          return [L('call','long',qty,K1), L('call','short',qty*2,K2), L('call','long',qty,K3)];
+        default:
+          throw new Error('Unknown template');
+      }
+    }
+
+    // ---------- Plot helpers ----------
+    function plotLattice(containerId, lattice, title) {
+      const x = [], y = [], texts = [];
+      for (let i=0;i<lattice.length;i++) {
+        for (let j=0;j<lattice[i].length;j++) {
+          x.push(i);
+          y.push(2*j - i);
+          texts.push(lattice[i][j].toFixed(4));
+        }
+      }
+      const nodes = { x, y, mode:'markers+text', text:texts, textposition:'top center', type:'scatter', marker:{size:10, color:'#2E86DE'}, name:'Nodes', hoverinfo:'text' };
+
+      const edge_x = [], edge_y = [];
+      for (let i=0;i<lattice.length-1;i++) {
+        for (let j=0;j<=i;j++) {
+          const x0=i, y0=2*j - i;
+          const x1=i+1, y1=2*(j+1)-(i+1);
+          edge_x.push(x0,x1,null); edge_y.push(y0,y1,null);
+          const x2=i+1, y2=2*j-(i+1);
+          edge_x.push(x0,x2,null); edge_y.push(y0,y2,null);
+        }
+      }
+      const edges = { x:edge_x, y:edge_y, mode:'lines', line:{color:'#B2BEC3', width:1}, type:'scatter', hoverinfo:'skip', showlegend:false };
+
+      Plotly.newPlot(containerId, [edges, nodes], {
+        title, margin:{l:10,r:10,t:40,b:10}, height:500,
+        xaxis:{title:'Step', showgrid:false, zeroline:false},
+        yaxis:{title:'State', showgrid:false, zeroline:false},
+        template:'plotly_white'
+      }, {displayModeBar:false, responsive:true});
+    }
+
+    function plotPayoffProfit(containerId, S, payoff, profit, breakevens=[]) {
+      const traces = [
+        {x:S, y:payoff, mode:'lines', name:'Payoff', line:{color:'#22c55e', width:2}, type:'scatter'},
+        {x:S, y:profit, mode:'lines', name:'Profit', line:{color:'#ef4444', width:2}, type:'scatter'},
+      ];
+      const shapes = breakevens.map(x => ({ type:'line', x0:x, x1:x, y0:Math.min(...profit, ...payoff), y1:Math.max(...profit, ...payoff), line:{color:'#7f8c8d', width:1, dash:'dash'} }));
+      Plotly.newPlot(containerId, traces, {
+        title:'Payoff and Profit at Expiry', height:500, margin:{l:10,r:10,t:40,b:10},
+        xaxis:{title:'Underlying Price at Expiry'}, yaxis:{title:'Value'}, template:'plotly_white', shapes,
+        legend:{orientation:'h', yanchor:'bottom', y:1.02, xanchor:'right', x:1}
+      }, {displayModeBar:false, responsive:true});
+    }
+
+    function plotDistribution(containerId, ST, probs) {
+      Plotly.newPlot(containerId, [{ x:ST, y:probs, type:'bar', marker:{color:'#9b59b6'}, name:'P(S_T)'}], {
+        title:'Terminal Price Distribution (Risk-Neutral)', height:450, margin:{l:10,r:10,t:40,b:10},
+        xaxis:{title:'S_T'}, yaxis:{title:'Probability'}, template:'plotly_white'
+      }, {displayModeBar:false, responsive:true});
+    }
+
+    // ---------- UI Wiring ----------
+    const els = {
+      S0: document.getElementById('S0'), K: document.getElementById('K'), r: document.getElementById('r'), q: document.getElementById('q'), sigma: document.getElementById('sigma'), T: document.getElementById('T'), n: document.getElementById('n'),
+      optType: document.getElementById('optType'), exercise: document.getElementById('exercise'), premiumOverride: document.getElementById('premiumOverride'), useOverride: document.getElementById('useOverride'),
+      metricPrice: document.getElementById('metricPrice'), metricPremium: document.getElementById('metricPremium'), metricQ: document.getElementById('metricQ'),
+      latticeInfo: document.getElementById('latticeInfo'), stockLattice: 'stockLattice', optionLattice: 'optionLattice',
+      payoffProfit: 'payoffProfit', singleCaption: document.getElementById('singleCaption'),
+      templateSelect: document.getElementById('templateSelect'), tplQty: document.getElementById('tplQty'), tplK1: document.getElementById('tplK1'), tplK2: document.getElementById('tplK2'), tplK3: document.getElementById('tplK3'), tplError: document.getElementById('tplError'), tplPrem: document.getElementById('tplPrem'), tplMaxP: document.getElementById('tplMaxP'), tplMaxL: document.getElementById('tplMaxL'), tplChart: 'tplChart', tplCaption: document.getElementById('tplCaption'),
+      numLegs: document.getElementById('numLegs'), legsContainer: document.getElementById('legsContainer'), btnEvalCustom: document.getElementById('btnEvalCustom'), custPrem: document.getElementById('custPrem'), custMaxP: document.getElementById('custMaxP'), custMaxL: document.getElementById('custMaxL'), custChart: 'custChart', custCaption: document.getElementById('custCaption'),
+      distChart: 'distChart', distCaption: document.getElementById('distCaption'),
+    };
+
+    function baseParams() {
+      return {
+        S0: Number(els.S0.value), K: Number(els.K.value), r: Number(els.r.value)/100, q: Number(els.q.value)/100, sigma: Number(els.sigma.value)/100, T: Number(els.T.value), n: Number(els.n.value), optionType: els.optType.value, exercise: els.exercise.value
+      };
+    }
+
+    function updateSingle() {
+      const b = baseParams();
+      let res;
+      try { res = computeCRR(b.S0, b.K, b.r, b.q, b.sigma, b.T, b.n, b.optionType, b.exercise); }
+      catch (e) { console.error(e); return; }
+
+      const price = res.price;
+      const useOv = els.useOverride.checked && Number(els.premiumOverride.value) > 0;
+      const displayPrem = useOv ? Number(els.premiumOverride.value) : price;
+
+      els.metricPrice.textContent = fmt(price);
+      els.metricPremium.textContent = fmt(displayPrem);
+      els.metricQ.textContent = `${Number(els.q.value).toFixed(2)}%`;
+
+      const n = b.n;
+      if (n <= 25) {
+        els.latticeInfo.textContent = '';
+        plotLattice(els.stockLattice, res.stock, 'Stock Lattice');
+        plotLattice(els.optionLattice, res.opt, 'Option Lattice');
+      } else {
+        els.latticeInfo.textContent = 'For readability, lattice plots are shown only when n ≤ 25.';
+        Plotly.purge(els.stockLattice); Plotly.purge(els.optionLattice);
+        document.getElementById(els.stockLattice).innerHTML = '';
+        document.getElementById(els.optionLattice).innerHTML = '';
+      }
+
+      // Payoff/Profit at expiry
+      const Sgrid = linspace(Math.max(0, b.S0*0.05), b.S0*2.5, 400);
+      const payoff = Sgrid.map(S => b.optionType === 'call' ? Math.max(0, S - b.K) : Math.max(0, b.K - S));
+      const profit = payoff.map(x => x - displayPrem);
+
+      const be = breakevensAndExtrema(Sgrid, profit);
+      plotPayoffProfit(els.payoffProfit, Sgrid, payoff, profit, be.breakevens);
+      const calls = b.optionType === 'call' ? 1 : 0;
+      const puts = b.optionType === 'put' ? 1 : 0;
+      els.singleCaption.textContent = `Legs: calls: ${calls}, puts: ${puts}. Exercise: ${b.exercise}.`;
+    }
+
+    function linspace(a, b, n) {
+      const arr = []; const step = (b - a) / (n - 1);
+      for (let i=0;i<n;i++) arr.push(a + i*step);
+      return arr;
+    }
+
+    function updateTemplates() {
+      const b = baseParams();
+      document.getElementById('tplError').textContent = '';
+      let K1 = Number(els.tplK1.value), K2 = Number(els.tplK2.value), K3 = Number(els.tplK3.value), qty = Number(els.tplQty.value);
+      let legs;
+      try { legs = buildTemplate(els.templateSelect.value, K1, K2, K3, qty); }
+      catch (e) { els.tplError.textContent = e.message || String(e); Plotly.purge(els.tplChart); return; }
+
+      const Sgrid = linspace(Math.max(0, b.S0*0.05), b.S0*2.5, 500);
+      const res = evaluateStrategy(legs, b, Sgrid);
+
+      const legCountCall = legs.reduce((acc, l) => acc + (l.kind === 'call' ? l.quantity : 0), 0);
+      const legCountPut = legs.reduce((acc, l) => acc + (l.kind === 'put' ? l.quantity : 0), 0);
+      els.tplCaption.textContent = `Legs: calls: ${legCountCall}, puts: ${legCountPut}. All legs share T, n, r, q, σ.`;
+
+      els.tplPrem.textContent = fmt(res.totalPrem);
+      els.tplMaxP.textContent = fmt(res.be.max_profit);
+      els.tplMaxL.textContent = fmt(res.be.max_loss);
+
+      plotPayoffProfit(els.tplChart, Sgrid, res.payoff, res.profit, res.be.breakevens);
+    }
+
+    function renderLegRows() {
+      const n = Number(els.numLegs.value);
+      const cont = els.legsContainer; cont.innerHTML = '';
+      for (let i=0;i<n;i++) {
+        const row = document.createElement('div'); row.className = 'leg-row';
+        row.innerHTML = `
+          <div>
+            <label>Type ${i+1}</label>
+            <select id="leg_kind_${i}"><option>call</option><option>put</option></select>
+          </div>
+          <div>
+            <label>Side ${i+1}</label>
+            <select id="leg_side_${i}"><option>long</option><option>short</option></select>
+          </div>
+          <div>
+            <label>Qty ${i+1}</label>
+            <input type="number" id="leg_qty_${i}" value="1" min="1" step="1" />
+          </div>
+          <div>
+            <label>Strike ${i+1}</label>
+            <input type="number" id="leg_strike_${i}" value="${Number(els.K.value) + i*5}" min="0.01" step="1" />
+          </div>
+          <div>
+            <label>Premium ${i+1} (optional)</label>
+            <input type="text" id="leg_prem_${i}" value="" />
+          </div>
+        `;
+        cont.appendChild(row);
+      }
+    }
+
+    function updateCustom(evaluate=false) {
+      if (!evaluate) return; // only calculate on button
+      const b = baseParams();
+      const n = Number(els.numLegs.value);
+      const legs = [];
+      for (let i=0;i<n;i++) {
+        const kind = document.getElementById(`leg_kind_${i}`).value;
+        const side = document.getElementById(`leg_side_${i}`).value;
+        const qty = Number(document.getElementById(`leg_qty_${i}`).value);
+        const strike = Number(document.getElementById(`leg_strike_${i}`).value);
+        const premStr = document.getElementById(`leg_prem_${i}`).value.trim();
+        const prem = premStr === '' ? null : Number(premStr);
+        legs.push({ kind, side, quantity: qty, strike, premium_override: prem });
+      }
+      const Sgrid = linspace(Math.max(0, b.S0*0.05), b.S0*2.5, 700);
+      const res = evaluateStrategy(legs, b, Sgrid);
+
+      const legCountCall = legs.reduce((acc, l) => acc + (l.kind === 'call' ? l.quantity : 0), 0);
+      const legCountPut = legs.reduce((acc, l) => acc + (l.kind === 'put' ? l.quantity : 0), 0);
+      els.custCaption.textContent = `Legs: calls: ${legCountCall}, puts: ${legCountPut}.`;
+
+      els.custPrem.textContent = fmt(res.totalPrem);
+      els.custMaxP.textContent = fmt(res.be.max_profit);
+      els.custMaxL.textContent = fmt(res.be.max_loss);
+
+      plotPayoffProfit(els.custChart, Sgrid, res.payoff, res.profit, res.be.breakevens);
+    }
+
+    function updateDistribution() {
+      const b = baseParams();
+      const { ST, probs } = terminalDistribution(b.S0, b.r, b.q, b.sigma, b.T, b.n);
+      plotDistribution(els.distChart, ST, probs);
+      const EN = ST.reduce((acc, s, i) => acc + s * probs[i], 0);
+      els.distCaption.textContent = `E[S_T] (risk-neutral) ≈ ${fmt(EN)}`;
+    }
+
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      document.getElementById('tab-single').style.display = tab==='single'? 'block':'none';
+      document.getElementById('tab-templates').style.display = tab==='templates'? 'block':'none';
+      document.getElementById('tab-custom').style.display = tab==='custom'? 'block':'none';
+      document.getElementById('tab-dist').style.display = tab==='dist'? 'block':'none';
+      // Refresh charts when switching
+      if (tab==='single') updateSingle();
+      if (tab==='templates') updateTemplates();
+      if (tab==='custom') { renderLegRows(); }
+      if (tab==='dist') updateDistribution();
+    }));
+
+    // Wire inputs
+    ['S0','K','r','q','sigma','T','n','optType','exercise','premiumOverride','useOverride'].forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener('input', () => { updateSingle(); updateTemplates(); });
+      el.addEventListener('change', () => { updateSingle(); updateTemplates(); });
+    });
+
+    // Templates inputs
+    ['templateSelect','tplQty','tplK1','tplK2','tplK3'].forEach(id => {
+      document.getElementById(id).addEventListener('input', updateTemplates);
+      document.getElementById(id).addEventListener('change', updateTemplates);
+    });
+
+    // Custom legs
+    els.numLegs.addEventListener('input', renderLegRows);
+    els.btnEvalCustom.addEventListener('click', () => updateCustom(true));
+
+    // Initial render
+    renderLegRows();
+    updateSingle();
+    updateTemplates();
+    updateDistribution();
+  </script>
+</body>
+</html>
